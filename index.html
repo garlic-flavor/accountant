@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+
+    <meta title="家計簿" />
+    <link rel="shortcut icon" type="image/png" href="img/favicon.png" />
+
+    <style type="text/css">
+      body {
+          width: 100%;
+      }
+
+      div {
+          padding-top: 10pt;
+      }
+
+      .page {
+          display: none;
+      }
+
+      #booktitle {
+          font-size: 18pt;
+          width: 90%;
+      }
+
+      .newinput {
+          font-size: 15pt;
+          width: 80%;
+      }
+
+      .centering {
+          text-align: center;
+      }
+
+      button {
+          font-size: 20pt;
+      }
+
+      #enterbutton {
+          width: 90%;
+      }
+
+      #editok, #editcancel, #removeline {
+          width: 20%;
+      }
+      #maintable {
+          margin-top: 10pt;
+          margin-bottom: 10px;
+          width: 90%;
+          border-collapse: collapse;
+      }
+
+      #maintable th, #maintable td {
+          border: 1px solid black;
+      }
+
+      #maintable td:nth-child(2), #maintable td:nth-child(3) {
+          text-align: right;
+      }
+
+      #maintable tr:nth-last-child(-n+2) {
+          border-top: 3px solid black;
+      }
+
+      #maintable tr:nth-last-child(-n+2) td:nth-child(1) {
+          text-align: center;
+      }
+
+      #maintable tr td:last-child {
+          white-space: nowrap;
+          width: 1px;
+      }
+
+      .editingline {
+          background-color: #4CAF50;
+      }
+
+    </style>
+
+    <script src="https://unpkg.com/jquery@3.4.1/dist/jquery.min.js" integrity="sha384-vk5WoKIaW/vJyUAd9n/wmopsmNhiy+L2Z+SBxGYnUkunIxVxAv/UtMOhba/xskxh" crossorigin="anonymous"></script>
+
+    <script>
+      $(function(){
+          var bookList = null;
+          var book = null;
+          var editingline = undefined;
+
+          $("#enterbutton").on("click", onEnterClick);
+          $("#editok").on("click", onEditOkClick);
+          $("#editcancel").on("click", onEditCancelClick);
+          $("#removeline").on("click", onRemoveLineClick);
+
+          $("#menu").on("click", onMenuClick);
+          $("#openFile").on("click", onOpenFileClick);
+          $("#closeMenu").on("click", onCloseMenuClick);
+          $("#selectNoFile").on("click", onCloseMenuClick);
+          $("#booktitle").on("focusout", onTitleFocusout);
+          $("#exportPage").on("click", onExportPageClick);
+
+          loadFromLocalStorage();
+
+
+          //--------------------------------------------------
+          function loadFromLocalStorage() {
+              bookList = JSON.parse(localStorage.getItem("BookList"));
+              if (!bookList)
+                  bookList = {};
+
+              if (bookList.lastSession)
+                  book = bookList[bookList.lastSession];
+              else
+                  book = createNewBook();
+
+              updateInputtingPage();
+          }
+
+          function updateStorage() {
+              if (!book) return;
+              var title = book.title;
+              if (!title || 0 == title.length)
+              {
+                  alert("タイトルを入力してください。");
+                  return;
+              }
+              bookList[title] = book;
+              bookList.lastSession = title;
+              try
+              {
+                  localStorage.setItem("BookList", JSON.stringify(bookList));
+              }
+              catch (e)
+              {
+                  alert("localStorageへの保存に失敗しました。");
+              }
+          }
+
+          function createNewBook() {
+              var now = new Date($.now());
+
+              return {
+                  title: ("出納帳 " + now.getFullYear() + "年" + now.getMonth() + "月"),
+                  list: [
+                      {
+                          name: "繰り越し",
+                          money: 0,
+                          description: ""
+                      }
+                  ]
+              }
+          }
+
+          function numberWithCommas(x) {
+              return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+          }
+
+          function makeMoneyText(price)
+          {
+              if (0 < price || price < 0)
+                  return numberWithCommas(price);
+              else
+                  return "";
+          }
+
+          function fromMoneyText(price) {
+              return parseFloat(price.replace(/,/g, ''));
+          }
+
+          function $makeTD(content)
+          {
+              return $("<td>").text(content);
+          }
+
+          function $makeButton(text, onClick)
+          {
+              return $("<button type='button'>").text(text).on("click", onClick);
+          }
+
+          function gatherInput() {
+              return {
+                  name: $("#whatfor").val(),
+                  money: fromMoneyText($("#price").val()),
+                  description: $("#description").val()
+              };
+          }
+
+          function restoreFrom$TR($tr) {
+              $tds = $tr.children("td");
+              name = $($tds[0]).text();
+              price = fromMoneyText($($tds[1]).text());
+              if (0 < price)
+                  price = -price;
+              else
+                  price = fromMoneyText($($tds[2]).text());
+              if (isNaN(price))
+                  price = 0;
+              description = $($tds[3]).text();
+              return {
+                  name: name,
+                  money: price,
+                  description: description
+              };
+          }
+
+          function onEditLineClick(l)
+          {
+              if (!isNaN(editingline))
+                  onEditOkClick();
+              editingline = l;
+              $line = $($("tr.editable")[l]);
+              $line.addClass("editingline");
+
+              line = restoreFrom$TR($line);
+              $("#whatfor").val(line.name);
+              $("#price").val(line.money);
+              $("#description").val(line.description);
+
+              $("#makenewline").hide();
+              $("#editline").show();
+          }
+
+          function onEnterClick() {
+              book.list.push(gatherInput());
+              clearInputs();
+              updateInputtingPage();
+          }
+
+
+          function clearInputs() {
+              $("#whatfor").val("");
+              $("#price").val("");
+              $("#description").val("");
+          }
+
+          function onEndEditing() {
+              $("tr.editable").removeClass("editingline");
+              clearInputs();
+              $("#editline").hide();
+              $("#makenewline").show();
+              editingline = undefined;
+          }
+
+          function onEditOkClick() {
+              if (isNaN(editingline))
+                  return onEndEditing();
+
+              book.list[editingline] = gatherInput();
+
+              onEndEditing();
+              updateInputtingPage();
+          }
+
+          function onEditCancelClick() {
+              onEndEditing();
+          }
+
+          function onRemoveLineClick() {
+              if (isNaN(editingline))
+                  return onEndEditing();
+              book.list.splice(editingline, 1);
+
+              updateInputtingPage();
+
+              onEndEditing();
+          }
+
+          function makePlain$TR(line)
+          {
+              var $tr = $("<tr>").addClass("editable");
+              $tr.append($makeTD(line.name));
+              if (0 < line.money)
+              {
+                  $tr.append($makeTD(""));
+                  $tr.append($makeTD(makeMoneyText(line.money)));
+              }
+              else
+              {
+                  $tr.append($makeTD(makeMoneyText(-line.money)));
+                  $tr.append($makeTD(""));
+              }
+              $tr.append($makeTD(line.description));
+              return $tr;
+          }
+
+          function updateInputtingPage() {
+              if (!book) return;
+
+              $page = $("#inputPage");
+              if ($page.is(":hidden"))
+              {
+                  $(".page").hide();
+                  $page.show();
+              }
+
+              $("#booktitle").val(book.title);
+              $(".editable").remove();
+              sumofout = 0;
+              sumofin = 0;
+              $sumline = $("#sumline");
+              book.list.forEach(function(value, index, array){
+                  var $tr = makePlain$TR(value);
+                  if (0 < value.money)
+                      sumofin += value.money;
+                  else
+                      sumofout += -value.money;
+
+                  $tr.append($makeTD("").append($makeButton("編集", (function(i){return function(){ onEditLineClick(i); }})(index))));
+                  $tr.insertBefore($sumline);
+              });
+              $("#sumofout").text(makeMoneyText(sumofout));
+              $("#sumofin").text(makeMoneyText(sumofin));
+              $("#residence").text(makeMoneyText(sumofin - sumofout));
+
+              updateStorage();
+          }
+
+          function onMenuClick() {
+              $(".page").hide();
+              $("#menuPage").show();
+          }
+
+          function onCloseMenuClick() {
+              $(".page").hide();
+              $("#inputPage").show();
+          }
+
+          function openFile(title) {
+              book = bookList[title];
+              updateInputtingPage();
+          }
+
+          function deleteFile(title) {
+              delete bookList[title];
+              if (book.title === title)
+              {
+                  book = createNewBook();
+                  updateInputtingPage();
+              }
+              else
+              {
+                  onOpenFileClick();
+              }
+
+          }
+
+          function $makeOpenButton(title) {
+              return $("<button>").addClass("fileslist").text(title).on("click", (function(t){ return function(){ openFile(t); }; })(title));
+          }
+
+          function $makeDeleteButton(title) {
+              return $("<button>").addClass("fileslist").text("削除").on("click", (function(t){ return function(){ deleteFile(t); }; })(title));
+          }
+
+          function onOpenFileClick() {
+              $(".page").hide();
+              $("#openFilePage").show();
+              $(".fileslist").remove();
+              $("#openFilePage br").remove();
+
+              $other = $("#selectOtherFile");
+
+              Object.values(bookList).forEach(function(value, index, array){
+                  title = value.title;
+                  if (!title)
+                      return;
+                  $makeOpenButton(title).insertBefore($other);
+                  $makeDeleteButton(title).insertBefore($other);
+                  $("<br>").insertBefore($other);
+              });
+          }
+
+          function onTitleFocusout() {
+              var oldtitle = book.title;
+              var newtitle = $("#booktitle").val();
+              if (0 < newtitle.length && oldtitle != newtitle)
+              {
+                  delete bookList[oldtitle];
+                  book.title = newtitle;
+                  updateStorage();
+              }
+          }
+
+          function onExportPageClick() {
+              var newWindow = window.open("", "_blank");
+              var $body = $(newWindow.document.body);
+              $("<h1>").text(book.title).appendTo($body);
+              $table = $("<table>");
+              $table.css({
+                  "margin-top": "10pt",
+                  "width": "90%",
+                  "border-collapse": "collapse",
+                  "border": "1px solid black"
+              });
+
+              $("<tr>")
+                  .append($("<th>").text("内容"))
+                  .append($("<th>").text("支出"))
+                  .append($("<th>").text("収入"))
+                  .append($("<th>").text("備考"))
+                  .appendTo($table);
+              sumofout = 0;
+              sumofin = 0;
+              book.list.forEach(function(value, index, array){
+                  makePlain$TR(value)
+                      .appendTo($table)
+                  if (0 < value.money)
+                      sumofin += value.money;
+                  else
+                      sumofout += -value.money;
+              });
+              $("<tr>")
+                  .append($("<td>").text("合計"))
+                  .append($("<td>").text(makeMoneyText(sumofout)))
+                  .append($("<td>").text(makeMoneyText(sumofin)))
+                  .append($("<td>"))
+                  .css("border-top", "3px solid black")
+                  .appendTo($table);
+              $("<tr>")
+                  .append($("<td>").text("在高"))
+                  .append($("<td>").text(""))
+                  .append($("<td>").text(makeMoneyText(sumofin - sumofout)))
+                  .append($("<td>"))
+                  .css("border-top", "3px solid black")
+                  .appendTo($table);
+
+              $table.find("td, th").css("border", "1px solid black");
+              $table.find("td:nth-child(2), td:nth-child(3)")
+                  .css("text-align", "right");
+              $table.appendTo($body);
+          }
+
+      });
+    </script>
+  </head>
+  <body>
+
+    <div class="page" id="menuPage">
+      <button id="openFile" type="button">ファイル</button><br />
+      <button id="exportPage" type="button">出力</button><br />
+      <button id="closeMenu" type="button">戻る</button><br />
+    </div>
+
+    <div class="page" id="openFilePage">
+      <button id="selectOtherFile" type="button">取り込む</button>
+      <button id="selectNoFile" type="button">戻る</button>
+    </div>
+
+    <div class="page" id="inputPage">
+      <div class="centering">
+        <input id="booktitle" type="text" /><br />
+      </div>
+
+      <table id="maintable">
+        <tr>
+          <th>内容</th>
+          <th>支出</th>
+          <th>収入</th>
+          <th>備考</th>
+          <th>...</th>
+        </tr>
+        <tr class="editable">
+          <td>繰り越し</td>
+          <td></td>
+          <td>50,000</td>
+          <td></td>
+          <td><button type="button">...</button></td>
+        </tr>
+        <tr class="editable">
+          <td>おかし代</td>
+          <td>300</td>
+          <td></td>
+          <td>うまい棒</td>
+          <td><button type="button">...</button></td>
+        </tr>
+        <tr id="sumline">
+          <td>合計</td>
+          <td id="sumofout"></td>
+          <td id="sumofin"></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr id="residenceline">
+          <td>在高</td>
+          <td></td>
+          <td id="residence"></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </table>
+
+      <div>
+        内容
+        <input class="newinput" id="whatfor" type="text" />
+      </div>
+      <div>
+        金額
+        <input class="newinput" id="price" type="number" />
+      </div>
+      <div>
+        備考
+        <input class="newinput" id="description" type="text" />
+      </div>
+      <div id="makenewline" class="centering">
+        <button id="enterbutton" type="button">
+          入力
+        </button>
+      </div>
+      <div style="display:none" id="editline">
+        <button id="editok" type="button">
+          確定
+        </button>
+        <button id="editcancel" type="button">
+          キャンセル
+        </button>
+        <button id="removeline" type="button">
+          行削除
+        </button>
+      </div>
+      <div>
+        <button id="menu" type="button">
+          メニュー
+        </button>
+      </div>
+    </div>
+  </body>
+</html>
