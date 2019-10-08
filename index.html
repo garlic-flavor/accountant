@@ -35,7 +35,7 @@
           text-align: center;
       }
 
-      button {
+      .bigbutton {
           font-size: 20pt;
       }
 
@@ -43,9 +43,6 @@
           width: 90%;
       }
 
-      #editok, #editcancel, #removeline {
-          width: 20%;
-      }
       #maintable {
           margin-top: 10pt;
           margin-bottom: 10px;
@@ -100,6 +97,9 @@
           $("#booktitle").on("focusout", onTitleFocusout);
           $("#exportPage").on("click", onExportPageClick);
 
+          $("#createNewFile").on("click", onCreateNewFileClick);
+          $("#selectOtherFile").on("change", onSelectOtherFileClick);
+
           loadFromLocalStorage();
 
 
@@ -112,7 +112,7 @@
               if (bookList.lastSession)
                   book = bookList[bookList.lastSession];
               else
-                  book = createNewBook();
+                  onOpenFileClick();
 
               updateInputtingPage();
           }
@@ -141,7 +141,7 @@
               var now = new Date($.now());
 
               return {
-                  title: ("出納帳 " + now.getFullYear() + "年" + now.getMonth() + "月"),
+                  title: ("出納帳 " + now.getFullYear() + "年" + (now.getMonth() + 1) + "月"),
                   list: [
                       {
                           name: "繰り越し",
@@ -322,8 +322,11 @@
           }
 
           function onCloseMenuClick() {
-              $(".page").hide();
-              $("#inputPage").show();
+              if (book !== undefined && book.title !== undefined && 0 < book.title.length)
+              {
+                  $(".page").hide();
+                  $("#inputPage").show();
+              }
           }
 
           function openFile(title) {
@@ -334,15 +337,8 @@
           function deleteFile(title) {
               delete bookList[title];
               if (book.title === title)
-              {
-                  book = createNewBook();
-                  updateInputtingPage();
-              }
-              else
-              {
-                  onOpenFileClick();
-              }
-
+                  book = {};
+              onOpenFileClick();
           }
 
           function $makeOpenButton(title) {
@@ -359,13 +355,13 @@
               $(".fileslist").remove();
               $("#openFilePage br").remove();
 
-              $other = $("#selectOtherFile");
+              $other = $("#createNewFile");
 
               Object.values(bookList).forEach(function(value, index, array){
                   title = value.title;
                   if (!title)
                       return;
-                  $makeOpenButton(title).insertBefore($other);
+                  $makeOpenButton(title).addClass("bigbutton").insertBefore($other);
                   $makeDeleteButton(title).insertBefore($other);
                   $("<br>").insertBefore($other);
               });
@@ -431,19 +427,67 @@
               $table.appendTo($body);
           }
 
+          function onCreateNewFileClick() {
+              updateStorage();
+              book = createNewBook();
+              if (book.title in bookList)
+              {
+                  for (var i = 1; i < 999; i++)
+                  {
+                      var title = book.title + "(" + i + ")";
+                      if (!(title in bookList))
+                      {
+                          book.title = title;
+                          break;
+                      }
+                      else if (i == 998)
+                      {
+                          alert("新規ファイルを作成できませんでした。");
+                          onOpenFileClick();
+                          return;
+                      }
+                  }
+              }
+              $(".page").hide();
+              updateInputtingPage();
+          }
+
+          function onSelectOtherFileClick() {
+              const fileList = this.files;
+              if (0 < fileList || !(fileList[0]))
+                  return;
+              console.log("reach1");
+              $("<div>").load(window.URL.createObjectURL(fileList[0]), null, function(){
+                  updateStorage()
+
+                  console.log("reach");
+                  $this = $(this);
+
+                  book = {}
+                  book.title = $this.find("h1").text();
+                  book.list = [];
+                  $this.find("tr.editable").each(function(idx, elem) {
+                      book.list.push(restoreFrom$TR($(elem)));
+                  });
+
+                  updateInputtingPage();
+              });
+          }
+
       });
     </script>
   </head>
   <body>
 
     <div class="page" id="menuPage">
-      <button id="openFile" type="button">ファイル</button><br />
-      <button id="exportPage" type="button">出力</button><br />
-      <button id="closeMenu" type="button">戻る</button><br />
+      <button class="bigbutton" id="openFile" type="button">ファイル</button><br />
+      <button class="bigbutton" id="exportPage" type="button">出力</button><br />
+      <button class="bigbutton" id="closeMenu" type="button">戻る</button><br />
     </div>
 
     <div class="page" id="openFilePage">
-      <button id="selectOtherFile" type="button">取り込む</button>
+      <button id="createNewFile" type="button">新規作成</button>
+      <input id="selectOtherFile" type="file" accept=".html">取り込む</button>
       <button id="selectNoFile" type="button">戻る</button>
     </div>
 
@@ -503,12 +547,12 @@
         <input class="newinput" id="description" type="text" />
       </div>
       <div id="makenewline" class="centering">
-        <button id="enterbutton" type="button">
+        <button class="bigbutton" id="enterbutton" type="button">
           入力
         </button>
       </div>
       <div style="display:none" id="editline">
-        <button id="editok" type="button">
+        <button class="bigbutton" id="editok" type="button">
           確定
         </button>
         <button id="editcancel" type="button">
